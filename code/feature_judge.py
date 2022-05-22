@@ -12,9 +12,6 @@ import numpy as np
 import pandas as pd
 from statsmodels.tsa.stattools import adfuller as ADF
 from util import *
-from changepy import pelt
-from changepy.costs import normal_mean
-import jenkspy
 from sklearn.linear_model import LinearRegression
 # 认为一分钟内被分割的点都是在同一段变化的区间
 window_size = 60
@@ -246,6 +243,10 @@ def trend_features(df_analyze, valuename, trend_features_inputdata, DPlot_dir, D
                             slope = abs((breaks[i-1] - breaks[i]) / ((breaks_jkp[i] - breaks_jkp[i-1]).days * 24 + (
                                         breaks_jkp[i] - breaks_jkp[i-1]).seconds / 60 / 60))
                             drop_slope.append(slope)
+                rise_slope_max = max(rise_slope)
+                drop_slope_max = max(drop_slope)
+                print("上升斜率队列：", rise_slope)
+                print("下降斜率队列：", drop_slope)
             #直接线性拟合判断斜率
             elif segment_method == "linear":
                 y = np.array(list(ts_numeric_monotonicity.values))
@@ -258,6 +259,7 @@ def trend_features(df_analyze, valuename, trend_features_inputdata, DPlot_dir, D
                 model.fit(x, y)
                 slope = model.coef_
                 print("拟合斜率：",slope)
+                print("判断斜率：",S05_drop_range)
                 if slope > 0:
                     rise_slope_max = slope
                     drop_slope_max = 0
@@ -265,10 +267,6 @@ def trend_features(df_analyze, valuename, trend_features_inputdata, DPlot_dir, D
                     rise_slope_max = 0
                     drop_slope_max = abs(slope)
 
-        #rise_slope_max = max(rise_slope)
-        #drop_slope_max = max(drop_slope)
-        #print("上升斜率队列：", rise_slope)
-        #print("下降斜率队列：", drop_slope)
 
         if drop_slope_max >= S07_drop_range:
             trend_feature_vector[7-1] = 1
@@ -283,7 +281,6 @@ def trend_features(df_analyze, valuename, trend_features_inputdata, DPlot_dir, D
             trend_feature_vector[2-1] = 1
         elif rise_slope_max >= S03_rise_range:
             trend_feature_vector[3-1] = 1
-
 
 
     print(trend_feature_vector)
@@ -313,21 +310,14 @@ def trend_features(df_analyze, valuename, trend_features_inputdata, DPlot_dir, D
         print("满足平稳震荡")
     return trend_feature_vector
 
-
-def threshold_features(df_analyze,valuename,threshold_features_inputdata,DPlot_dir,Dplot):
-    # 判断准则 ： threshold_features_inputdata
-    # 时序序列 ： df_analyze
-    # 时序序列在iotdb中的路径名：valuename
-    # 调试输出路径：DPlot_dir
-    # 调试输出判断：Dplot
-
-    print('==>>>数据测点：%s'%(valuename))
-    T03_range = threshold_features_inputdata['T03_range']   #高高高
-    T02_range = threshold_features_inputdata['T02_range']   # 高高
-    T01_range = threshold_features_inputdata['T01_range']   # 高
-    T04_range = threshold_features_inputdata['T04_range']   #低
-    T05_range = threshold_features_inputdata['T05_range']   #低低
-    T06_range = threshold_features_inputdata['T06_range']   #低低低
+def threshold_features(df_analyze,valuename,threshold_features_inputdata):
+    print('==>>>数据测点：%s' % (valuename))
+    T03_range = threshold_features_inputdata['T03_range']  # 高高高
+    T02_range = threshold_features_inputdata['T02_range']  # 高高
+    T01_range = threshold_features_inputdata['T01_range']  # 高
+    T04_range = threshold_features_inputdata['T04_range']  # 低
+    T05_range = threshold_features_inputdata['T05_range']  # 低低
+    T06_range = threshold_features_inputdata['T06_range']  # 低低低
 
     # 若不落在以上区域中，均为正常
     T_used = threshold_features_inputdata['T_used']
@@ -337,126 +327,78 @@ def threshold_features(df_analyze,valuename,threshold_features_inputdata,DPlot_d
     ts_numeric = pd.to_numeric(df_analyze)
     print('==>>>用于阈值判断的时序数据：')
     tsinfo = ts_info(ts_numeric)
-    # 阈值判断区间是否合理
-    ranking=[]
-    if not T_used[3-1] == 0:
+    ranking = []
+    if not T_used[3 - 1] == 0:
         ranking.append(T03_range[1])
         ranking.append(T03_range[0])
-    if not T_used[2-1] == 0:
+    if not T_used[2 - 1] == 0:
         ranking.append(T02_range[1])
         ranking.append(T02_range[0])
-    if not T_used[1-1] == 0:
+    if not T_used[1 - 1] == 0:
         ranking.append(T01_range[1])
         ranking.append(T01_range[0])
-    if not T_used[4-1] == 0:
+    if not T_used[4 - 1] == 0:
         ranking.append(T04_range[1])
         ranking.append(T04_range[0])
-    if not T_used[5-1] == 0:
+    if not T_used[5 - 1] == 0:
         ranking.append(T05_range[1])
         ranking.append(T05_range[0])
-    if not T_used[6-1] == 0:
+    if not T_used[6 - 1] == 0:
         ranking.append(T06_range[1])
         ranking.append(T06_range[0])
 
-    for i in range(np.size(ranking)-1):
-        if ranking[i] < ranking[i+1]:
+    for i in range(np.size(ranking) - 1):
+        if ranking[i] < ranking[i + 1]:
             print('Error：检查各失效阈值的判定区间是否满足规律要求！（T3>T2>T1>T4>T5>T6）')
             os._exit()
-    mean_value = np.mean(df_analyze)
-
-    if not T_used[3-1] == 0:
-        if mean_value >= T03_range[0] and mean_value <= T03_range[1]:
-            t_tf[3-1]=1
-    if not T_used[2-1] == 0:
-        if mean_value >= T02_range[0] and mean_value <= T02_range[1]:
-            t_tf[2-1]=1
-    if not T_used[1-1] == 0:
-        if mean_value >= T01_range[0] and mean_value <= T01_range[1]:
-            t_tf[1-1]=1
-    if not T_used[4-1] == 0:
-        if mean_value >= T04_range[0] and mean_value <= T04_range[1]:
-            t_tf[4-1]=1
-    if not T_used[5-1] == 0:
-        if mean_value >= T05_range[0] and mean_value <= T05_range[1]:
-            t_tf[5-1]=1
-    if not T_used[6-1] == 0:
-        if mean_value >= T06_range[0] and mean_value <= T06_range[1]:
-            t_tf[6-1]=1
+    #未滤波数据每个点进行阈值判断
+    timepoint = []
+    error_value = []
+    error_rule = []
+    for _, timeseries_value_ in enumerate(ts_numeric):
+        if _ == 0:
+            continue
+        if not T_used[3 - 1] == 0:
+            if ts_numeric[_] >= T03_range[0] and ts_numeric[_] <= T03_range[1]:
+                timepoint.append(ts_numeric.index[_])
+                error_value.append(ts_numeric[_])
+                error_rule.append("高3超限")
+                t_tf[3 - 1] = 1
+        if not T_used[2 - 1] == 0:
+            if ts_numeric[_] >= T02_range[0] and ts_numeric[_] < T02_range[1]:
+                timepoint.append(ts_numeric.index[_])
+                error_value.append(ts_numeric[_])
+                error_rule.append("高2超限")
+                t_tf[2 - 1] = 1
+        if not T_used[1 - 1] == 0:
+            if ts_numeric[_] >= T01_range[0] and ts_numeric[_] < T01_range[1]:
+                timepoint.append(ts_numeric.index[_])
+                error_value.append(ts_numeric[_])
+                error_rule.append("高1超限")
+                t_tf[1 - 1] = 1
+        if not T_used[4 - 1] == 0:
+            if ts_numeric[_] >= T04_range[0] and ts_numeric[_] <= T04_range[1]:
+                timepoint.append(ts_numeric.index[_])
+                error_value.append(ts_numeric[_])
+                error_rule.append("低1超限")
+                t_tf[4 - 1] = 1
+        if not T_used[5 - 1] == 0:
+            if ts_numeric[_] > T05_range[0] and ts_numeric[_] <= T05_range[1]:
+                timepoint.append(ts_numeric.index[_])
+                error_value.append(ts_numeric[_])
+                error_rule.append("低2超限")
+                t_tf[5 - 1] = 1
+        if not T_used[6 - 1] == 0:
+            if ts_numeric[_] > T06_range[0] and ts_numeric[_] <= T06_range[1]:
+                timepoint.append(ts_numeric.index[_])
+                error_value.append(ts_numeric[_])
+                error_rule.append("低3超限")
+                t_tf[6 - 1] = 1
     print('阈值征兆向量:', t_tf)
+    threshold_error_result = dict(zip(timepoint, error_value))
+    print("阈值异常点:")
+    print(threshold_error_result)
     return t_tf
-
-
-def threshold_features(df_analyze,valuename,threshold_features_inputdata,DPlot_dir,Dplot):
-    # 判断准则 ： threshold_features_inputdata
-    # 时序序列 ： df_analyze
-    # 时序序列在iotdb中的路径名：valuename
-    # 调试输出路径：DPlot_dir
-    # 调试输出判断：Dplot
-
-    print('==>>>数据测点：%s'%(valuename))
-    T03_range = threshold_features_inputdata['T03_range']   #高高高
-    T02_range = threshold_features_inputdata['T02_range']   # 高高
-    T01_range = threshold_features_inputdata['T01_range']   # 高
-    T04_range = threshold_features_inputdata['T04_range']   #低
-    T05_range = threshold_features_inputdata['T05_range']   #低低
-    T06_range = threshold_features_inputdata['T06_range']   #低低低
-
-    # 若不落在以上区域中，均为正常
-    T_used    = threshold_features_inputdata['T_used']
-
-    t_tf = [0, 0, 0, 0, 0, 0]
-
-    ts_numeric = pd.to_numeric(df_analyze)
-    print('==>>>用于阈值判断的时序数据：')
-    tsinfo = ts_info(ts_numeric)
-    # 阈值判断区间是否合理
-    ranking=[]
-    if not T_used[3-1] == 0:
-        ranking.append(T03_range[1])
-        ranking.append(T03_range[0])
-    if not T_used[2-1] == 0:
-        ranking.append(T02_range[1])
-        ranking.append(T02_range[0])
-    if not T_used[1-1] == 0:
-        ranking.append(T01_range[1])
-        ranking.append(T01_range[0])
-    if not T_used[4-1] == 0:
-        ranking.append(T04_range[1])
-        ranking.append(T04_range[0])
-    if not T_used[5-1] == 0:
-        ranking.append(T05_range[1])
-        ranking.append(T05_range[0])
-    if not T_used[6-1] == 0:
-        ranking.append(T06_range[1])
-        ranking.append(T06_range[0])
-
-    for i in range(np.size(ranking)-1):
-        if ranking[i] < ranking[i+1]:
-            print('Error：检查各失效阈值的判定区间是否满足规律要求！（T3>T2>T1>T4>T5>T6）')
-            os._exit()
-    mean_value = np.mean(df_analyze)
-    print(mean_value)
-    if not T_used[3-1] == 0:
-        if mean_value >= T03_range[0] and mean_value <= T03_range[1]:
-            t_tf[3-1]=1
-    if not T_used[2-1] == 0:
-        if mean_value >= T02_range[0] and mean_value <= T02_range[1]:
-            t_tf[2-1]=1
-    if not T_used[1-1] == 0:
-        if mean_value >= T01_range[0] and mean_value <= T01_range[1]:
-            t_tf[1-1]=1
-    if not T_used[4-1] == 0:
-        if mean_value >= T04_range[0] and mean_value <= T04_range[1]:
-            t_tf[4-1]=1
-    if not T_used[5-1] == 0:
-        if mean_value >= T05_range[0] and mean_value <= T05_range[1]:
-            t_tf[5-1]=1
-    if not T_used[6-1] == 0:
-        if mean_value >= T06_range[0] and mean_value <= T06_range[1]:
-            t_tf[6-1]=1
-    print('阈值征兆向量:', t_tf)
-    return t_tf
-
 
 if __name__ == '__main__':
     jsonfile ={
